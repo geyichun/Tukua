@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PixFlow - Batch Image Processor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
+  color: #e0e0e0;
+  min-height: 100vh;
+  padding: 20px;
+}
+.container { max-width: 1100px; margin: 0 auto; }
+
+/* Header */
+.header { text-align: center; padding: 30px 0 20px; }
+.header h1 {
+  font-size: 2.2rem;
+  background: linear-gradient(135deg, #a78bfa, #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 6px;
+}
+.header p { color: #8892b0; font-size: 0.95rem; }
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed #374151;
+  border-radius: 16px;
+  padding: 50px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: rgba(255,255,255,0.02);
+  margin-bottom: 20px;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: #8b5cf6;
+  background: rgba(139,92,246,0.08);
+}
+.drop-zone .icon { font-size: 3rem; margin-bottom: 12px; }
+.drop-zone .text { color: #9ca3af; font-size: 1rem; }
+.drop-zone .hint { color: #6b7280; font-size: 0.85rem; margin-top: 6px; }
+#fileInput { display: none; }
+
+/* Controls bar */
+.controls-bar {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  padding: 16px 20px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.controls-bar button {
+  padding: 8px 18px;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  color: #d1d5db;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.controls-bar button:hover { border-color: #8b5cf6; color: #a78bfa; }
+.controls-bar button.active {
+  background: rgba(139,92,246,0.2);
+  border-color: #8b5cf6;
+  color: #a78bfa;
+}
+.controls-bar .count { color: #6b7280; font-size: 0.85rem; margin-left: auto; }
+
+/* Thumbnail grid */
+.thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.thumb-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid #1f2937;
+  transition: border-color 0.2s;
+}
+.thumb-item:hover { border-color: #8b5cf6; }
+.thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+.thumb-item .remove-btn {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.7);
+  color: #f87171;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.thumb-item:hover .remove-btn { opacity: 1; }
+.thumb-item .size-info {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 4px 6px;
+  background: rgba(0,0,0,0.7);
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+/* Settings panel */
+.settings-panel {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.settings-panel h3 { font-size: 1rem; color: #a78bfa; margin-bottom: 16px; }
+.settings-row {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 12px;
+}
+.settings-row:last-child { margin-bottom: 0; }
+.settings-row label {
+  font-size: 0.85rem; color: #9ca3af; min-width: 60px;
+}
+.settings-row input[type="range"] { flex: 1; min-width: 120px; accent-color: #8b5cf6; }
+.settings-row input[type="text"],
+.settings-row input[type="number"],
+.settings-row select {
+  padding: 8px 12px;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.3);
+  color: #e0e0e0;
+  font-size: 0.9rem;
+}
+.settings-row input[type="color"] {
+  width: 36px; height: 36px; border: 1px solid #374151;
+  border-radius: 6px; background: none; cursor: pointer;
+}
+.settings-row input[type="file"] { color: #9ca3af; font-size: 0.85rem; }
+.preset-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.preset-btns button {
+  padding: 6px 14px;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.preset-btns button:hover, .preset-btns button.active {
+  border-color: #8b5cf6; color: #a78bfa; background: rgba(139,92,246,0.15);
+}
+
+/* Action bar */
+.action-bar {
+  display: flex; gap: 12px; justify-content: center; padding: 16px 0;
+}
+.action-bar button {
+  padding: 12px 36px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  box-shadow: 0 4px 20px rgba(139,92,246,0.3);
+}
+.btn-primary:hover { box-shadow: 0 6px 28px rgba(139,92,246,0.45); transform: translateY(-1px); }
+.btn-secondary {
+  background: rgba(255,255,255,0.06);
+  color: #9ca3af;
+  border: 1px solid #374151;
+}
+.btn-secondary:hover { border-color: #8b5cf6; color: #a78bfa; }
+
+/* Progress */
+.progress-bar {
+  height: 4px; background: #1f2937; border-radius: 2px;
+  margin-top: 12px; overflow: hidden; display: none;
+}
+.progress-bar .fill {
+  height: 100%; background: linear-gradient(90deg, #8b5cf6, #6366f1);
+  border-radius: 2px; transition: width 0.3s;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center; padding: 40px; color: #6b7280;
+  display: none;
+}
+.empty-state.show { display: block; }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .header h1 { font-size: 1.6rem; }
+  .drop-zone { padding: 30px 16px; }
+  .controls-bar { gap: 8px; padding: 12px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🖼️ PixFlow</h1>
+    <p>Batch Image Compressor · Watermark · Resizer | No Install, Double-Click to Launch</p>
+  </div>
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">📁</div>
+    <div class="text">Drag & drop images here, or click to browse</div>
+    <div class="hint">Supports JPG / PNG / WebP / BMP — multiple files welcome</div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" multiple>
+
+  <!-- Controls -->
+  <div class="controls-bar" id="controlsBar" style="display:none">
+    <button class="active" data-mode="compress">🗜️ Compress</button>
+    <button data-mode="watermark">💧 Watermark</button>
+    <button data-mode="resize">📐 Resize</button>
+    <button data-mode="all">🔧 All-in-One</button>
+    <span class="count" id="imageCount">0 images</span>
+  </div>
+
+  <!-- Thumbnail grid -->
+  <div class="thumb-grid" id="thumbGrid"></div>
+  <div class="empty-state show" id="emptyState">No images yet. Drag & drop or click the area above to get started.</div>
+
+  <!-- Settings panel -->
+  <div class="settings-panel" id="settingsPanel" style="display:none">
+    <!-- Compress settings -->
+    <div id="compressSettings">
+      <h3>🗜️ Compression</h3>
+      <div class="settings-row">
+        <label>Quality</label>
+        <input type="range" id="quality" min="10" max="100" value="75">
+        <span id="qualityVal" style="color:#a78bfa;min-width:36px;text-align:right;">75%</span>
+      </div>
+      <div class="settings-row">
+        <label>Max Width</label>
+        <input type="number" id="maxWidth" value="1920" min="100" max="8000" style="width:100px">
+        <span style="color:#6b7280;font-size:0.8rem;">px — larger images scaled down proportionally</span>
+      </div>
+    </div>
+
+    <!-- Watermark settings -->
+    <div id="watermarkSettings" style="display:none">
+      <h3>💧 Watermark</h3>
+      <div class="settings-row">
+        <label>Type</label>
+        <select id="wmType">
+          <option value="text">Text Watermark</option>
+          <option value="image">Image Watermark</option>
+        </select>
+      </div>
+      <div id="wmTextOptions">
+        <div class="settings-row">
+          <label>Text</label>
+          <input type="text" id="wmText" value="© Your Brand" style="flex:1" maxlength="50">
+        </div>
+        <div class="settings-row">
+          <label>Size</label>
+          <input type="number" id="wmSize" value="36" min="8" max="200" style="width:80px">
+          <label>Opacity</label>
+          <input type="range" id="wmOpacity" min="10" max="100" value="40">
+          <span id="wmOpacityVal" style="color:#a78bfa;min-width:36px">40%</span>
+        </div>
+        <div class="settings-row">
+          <label>Color</label>
+          <input type="color" id="wmColor" value="#ffffff">
+          <label>Position</label>
+          <select id="wmPosition">
+            <option value="center">Center</option>
+            <option value="bottom-right">Bottom Right</option>
+            <option value="bottom-left">Bottom Left</option>
+            <option value="top-right">Top Right</option>
+            <option value="top-left">Top Left</option>
+            <option value="tiled">Tiled</option>
+          </select>
+        </div>
+      </div>
+      <div id="wmImageOptions" style="display:none">
+        <div class="settings-row">
+          <label>Logo</label>
+          <input type="file" id="wmImageFile" accept="image/png,image/jpeg,image/webp">
+          <span style="color:#6b7280;font-size:0.8rem;">Transparent PNG recommended</span>
+        </div>
+        <div class="settings-row">
+          <label>Scale</label>
+          <input type="range" id="wmImgScale" min="10" max="100" value="30">
+          <span id="wmImgScaleVal" style="color:#a78bfa;min-width:36px">30%</span>
+          <label>Position</label>
+          <select id="wmImgPosition">
+            <option value="center">Center</option>
+            <option value="bottom-right">Bottom Right</option>
+            <option value="bottom-left">Bottom Left</option>
+            <option value="top-right">Top Right</option>
+            <option value="top-left">Top Left</option>
+            <option value="tiled">Tiled</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize settings -->
+    <div id="resizeSettings" style="display:none">
+      <h3>📐 Resize</h3>
+      <div class="settings-row">
+        <label>Presets</label>
+        <div class="preset-btns" id="presetBtns">
+          <button data-w="1080" data-h="1080">Instagram 1:1</button>
+          <button data-w="1080" data-h="1920">Instagram Story</button>
+          <button data-w="1200" data-h="675">Twitter 1200×675</button>
+          <button data-w="1280" data-h="720">YouTube Thumbnail</button>
+          <button data-w="1000" data-h="1500">Pinterest 2:3</button>
+          <button data-w="0" data-h="0" class="custom-preset">Custom</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <label>Width</label>
+        <input type="number" id="resizeW" value="1080" min="1" max="8000" style="width:100px">
+        <label>Height</label>
+        <input type="number" id="resizeH" value="1080" min="1" max="8000" style="width:100px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="keepAspect" checked> Keep aspect ratio
+        </label>
+      </div>
+    </div>
+
+    <!-- All-in-one settings -->
+    <div id="allSettings" style="display:none">
+      <h3>🔧 All-in-One (Compress → Watermark → Resize)</h3>
+      <p style="color:#6b7280;font-size:0.85rem;">Processes images in sequence using the settings from each tab above. Watermark will use the text watermark configuration.</p>
+    </div>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="action-bar" id="actionBar" style="display:none">
+    <button class="btn-secondary" onclick="clearAll()">Clear All</button>
+    <button class="btn-primary" id="processBtn" onclick="processAll()">🚀 Process & Download ZIP</button>
+  </div>
+  <div class="progress-bar" id="progressBar"><div class="fill" id="progressFill"></div></div>
+</div>
+
+<script>
+// ---- State ----
+let imageFiles = [];
+let wmImage = null;
+
+// ---- DOM ----
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const thumbGrid = document.getElementById('thumbGrid');
+const emptyState = document.getElementById('emptyState');
+const controlsBar = document.getElementById('controlsBar');
+const settingsPanel = document.getElementById('settingsPanel');
+const actionBar = document.getElementById('actionBar');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
+const imageCount = document.getElementById('imageCount');
+
+let currentMode = 'compress';
+
+// ---- File handling ----
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(Array.from(e.dataTransfer.files));
+});
+fileInput.addEventListener('change', () => {
+  addFiles(Array.from(fileInput.files));
+  fileInput.value = '';
+});
+
+function addFiles(files) {
+  const imageOnly = files.filter(f => f.type.startsWith('image/'));
+  if (imageOnly.length === 0) return;
+  imageFiles = [...imageFiles, ...imageOnly];
+  renderThumbs();
+}
+
+function removeImage(index) {
+  imageFiles.splice(index, 1);
+  renderThumbs();
+}
+
+function clearAll() {
+  imageFiles = [];
+  renderThumbs();
+}
+
+function renderThumbs() {
+  thumbGrid.innerHTML = '';
+  const hasImages = imageFiles.length > 0;
+
+  emptyState.classList.toggle('show', !hasImages);
+  controlsBar.style.display = hasImages ? 'flex' : 'none';
+  settingsPanel.style.display = hasImages ? 'block' : 'none';
+  actionBar.style.display = hasImages ? 'flex' : 'none';
+  imageCount.textContent = `${imageFiles.length} image${imageFiles.length !== 1 ? 's' : ''}`;
+
+  imageFiles.forEach((file, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb-item';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    const sizeKB = (file.size / 1024).toFixed(0);
+    const sizeInfo = document.createElement('div');
+    sizeInfo.className = 'size-info';
+    sizeInfo.textContent = `${sizeKB} KB`;
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-btn';
+    removeBtn.textContent = '✕';
+    removeBtn.onclick = (e) => { e.stopPropagation(); removeImage(i); };
+    div.appendChild(img);
+    div.appendChild(sizeInfo);
+    div.appendChild(removeBtn);
+    thumbGrid.appendChild(div);
+  });
+}
+
+// ---- Mode switching ----
+document.querySelectorAll('.controls-bar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.controls-bar button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+    updateSettingsPanel();
+  });
+});
+
+function updateSettingsPanel() {
+  document.getElementById('compressSettings').style.display = (currentMode === 'compress' || currentMode === 'all') ? 'block' : 'none';
+  document.getElementById('watermarkSettings').style.display = (currentMode === 'watermark' || currentMode === 'all') ? 'block' : 'none';
+  document.getElementById('resizeSettings').style.display = (currentMode === 'resize' || currentMode === 'all') ? 'block' : 'none';
+  document.getElementById('allSettings').style.display = currentMode === 'all' ? 'block' : 'none';
+
+  if (currentMode === 'all') {
+    document.getElementById('processBtn').textContent = '🚀 Process All & Download ZIP';
+  } else {
+    document.getElementById('processBtn').textContent = '🚀 Process & Download ZIP';
+  }
+}
+
+// ---- Watermark type switch ----
+document.getElementById('wmType').addEventListener('change', function() {
+  const isText = this.value === 'text';
+  document.getElementById('wmTextOptions').style.display = isText ? 'block' : 'none';
+  document.getElementById('wmImageOptions').style.display = isText ? 'none' : 'block';
+});
+
+document.getElementById('wmImageFile').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { wmImage = new Image(); wmImage.src = reader.result; };
+  reader.readAsDataURL(file);
+});
+
+// ---- Slider value displays ----
+document.getElementById('quality').addEventListener('input', function() {
+  document.getElementById('qualityVal').textContent = this.value + '%';
+});
+document.getElementById('wmOpacity').addEventListener('input', function() {
+  document.getElementById('wmOpacityVal').textContent = this.value + '%';
+});
+document.getElementById('wmImgScale').addEventListener('input', function() {
+  document.getElementById('wmImgScaleVal').textContent = this.value + '%';
+});
+
+// ---- Preset buttons ----
+document.querySelectorAll('#presetBtns button').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#presetBtns button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    const w = parseInt(this.dataset.w);
+    const h = parseInt(this.dataset.h);
+    document.getElementById('resizeW').value = w || '';
+    document.getElementById('resizeH').value = h || '';
+  });
+});
+
+// ---- Processing ----
+async function processAll() {
+  if (imageFiles.length === 0) return;
+
+  const btn = document.getElementById('processBtn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  progressBar.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  const total = imageFiles.length;
+  const processed = [];
+
+  for (let i = 0; i < total; i++) {
+    const file = imageFiles[i];
+    let img = await loadImage(file);
+
+    if (currentMode === 'compress' || currentMode === 'all') {
+      img = await compressImage(img);
+    }
+    if (currentMode === 'watermark' || currentMode === 'all') {
+      img = await addWatermark(img);
+    }
+    if (currentMode === 'resize' || currentMode === 'all') {
+      img = await resizeImage(img);
+    }
+
+    const blob = await canvasToBlob(img.canvas);
+    const ext = file.name.split('.').pop().toLowerCase();
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    const suffix = currentMode === 'all' ? '_processed' : `_${currentMode}`;
+    processed.push({ blob, name: `${baseName}${suffix}.${ext === 'png' ? 'png' : 'jpg'}` });
+
+    progressFill.style.width = ((i + 1) / total * 100) + '%';
+    await sleep(10);
+  }
+
+  // Create ZIP
+  const zip = new JSZip();
+  processed.forEach(p => zip.file(p.name, p.blob));
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+  // Download
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pixflow_processed_${Date.now()}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  btn.disabled = false;
+  btn.textContent = currentMode === 'all' ? '🚀 Process All & Download ZIP' : '🚀 Process & Download ZIP';
+  progressBar.style.display = 'none';
+  progressFill.style.width = '0%';
+
+  const origTotal = imageFiles.reduce((s, f) => s + f.size, 0);
+  const newTotal = processed.reduce((s, p) => s + p.blob.size, 0);
+  alert(`✅ Done!\n\n${total} image${total !== 1 ? 's' : ''} processed & zipped\nOriginal: ${(origTotal/1024).toFixed(0)} KB\nProcessed: ${(newTotal/1024).toFixed(0)} KB\nSaved: ${((1 - newTotal/origTotal)*100).toFixed(0)}%`);
+}
+
+function loadImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    img.onload = () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve({ img, canvas, ctx });
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function compressImage({ canvas, ctx }) {
+  const quality = parseInt(document.getElementById('quality').value) / 100;
+  const maxW = parseInt(document.getElementById('maxWidth').value);
+  let w = canvas.width, h = canvas.height;
+  if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(canvas, 0, 0, w, h);
+  return { canvas: c, ctx: cx };
+}
+
+function addWatermark({ canvas, ctx }) {
+  const c = document.createElement('canvas');
+  c.width = canvas.width; c.height = canvas.height;
+  const cx = c.getContext('2d');
+  cx.drawImage(canvas, 0, 0);
+
+  const wmType = document.getElementById('wmType').value;
+  if (wmType === 'text') {
+    drawTextWatermark(cx, c.width, c.height);
+  } else if (wmImage && wmType === 'image') {
+    drawImageWatermark(cx, c.width, c.height);
+  }
+  return { canvas: c, ctx: cx };
+}
+
+function drawTextWatermark(ctx, w, h) {
+  const text = document.getElementById('wmText').value || '©';
+  const fontSize = parseInt(document.getElementById('wmSize').value);
+  const opacity = parseInt(document.getElementById('wmOpacity').value) / 100;
+  const color = document.getElementById('wmColor').value;
+  const position = document.getElementById('wmPosition').value;
+
+  ctx.font = `bold ${fontSize}px "Inter", -apple-system, sans-serif`;
+  ctx.fillStyle = hexToRgba(color, opacity);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const pad = fontSize;
+  const tw = ctx.measureText(text).width;
+  const th = fontSize;
+
+  if (position === 'tiled') {
+    ctx.save();
+    ctx.translate(w/2, h/2);
+    ctx.rotate(-25 * Math.PI / 180);
+    const spacing = fontSize * 4;
+    for (let y = -h; y < h * 2; y += spacing) {
+      for (let x = -w; x < w * 2; x += spacing) {
+        ctx.fillText(text, x, y);
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  let px, py;
+  switch (position) {
+    case 'top-left': px = pad + tw/2; py = pad + th/2; ctx.textAlign = 'left'; break;
+    case 'top-right': px = w - pad - tw/2; py = pad + th/2; ctx.textAlign = 'right'; break;
+    case 'bottom-left': px = pad + tw/2; py = h - pad - th/2; ctx.textAlign = 'left'; break;
+    case 'bottom-right': px = w - pad - tw/2; py = h - pad - th/2; ctx.textAlign = 'right'; break;
+    case 'center': px = w/2; py = h/2; break;
+  }
+  ctx.fillText(text, px, py);
+}
+
+function drawImageWatermark(ctx, w, h) {
+  const scale = parseInt(document.getElementById('wmImgScale').value) / 100;
+  const position = document.getElementById('wmImgPosition').value;
+  const iw = wmImage.naturalWidth * scale;
+  const ih = wmImage.naturalHeight * scale;
+  const pad = 20;
+
+  if (position === 'tiled') {
+    for (let y = 0; y < h; y += ih + pad) {
+      for (let x = 0; x < w; x += iw + pad) {
+        ctx.drawImage(wmImage, x, y, iw, ih);
+      }
+    }
+    return;
+  }
+
+  let px, py;
+  switch (position) {
+    case 'top-left': px = pad; py = pad; break;
+    case 'top-right': px = w - iw - pad; py = pad; break;
+    case 'bottom-left': px = pad; py = h - ih - pad; break;
+    case 'bottom-right': px = w - iw - pad; py = h - ih - pad; break;
+    case 'center': px = (w - iw)/2; py = (h - ih)/2; break;
+  }
+  ctx.globalAlpha = parseInt(document.getElementById('wmOpacity').value) / 100;
+  ctx.drawImage(wmImage, px, py, iw, ih);
+  ctx.globalAlpha = 1;
+}
+
+function resizeImage({ canvas }) {
+  let w = parseInt(document.getElementById('resizeW').value);
+  let h = parseInt(document.getElementById('resizeH').value);
+  const keepAspect = document.getElementById('keepAspect').checked;
+
+  if (!w || !h) return { canvas, ctx: canvas.getContext('2d') };
+
+  if (keepAspect) {
+    const ratio = Math.min(w / canvas.width, h / canvas.height);
+    w = Math.round(canvas.width * ratio);
+    h = Math.round(canvas.height * ratio);
+  }
+
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(canvas, 0, 0, w, h);
+  return { canvas: c, ctx: cx };
+}
+
+function canvasToBlob(canvas) {
+  return new Promise(resolve => {
+    const quality = parseInt(document.getElementById('quality').value) / 100;
+    canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+  });
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
